@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<exchange units="mm">
+  <batchtest name="Batch_MM" units="mm">
+    <clashtests>
+      <clashtest name="Metric MM Test" status="Active">
+        <clashresults>
+          <clashresult name="Clash_MM_1" guid="c-mm-001" status="Active" distance="-25.4">
+            <clashpoint>
+              <pos3f x="10000.0" y="20000.0" z="3000.0"/>
+            </clashpoint>
+            <clashobjects>
+              <clashobject>
+                <pathlink><node>Arch.nwc</node></pathlink>
+                <objectattribute><name>Element ID</name><value>101</value></objectattribute>
+              </clashobject>
+              <clashobject>
+                <pathlink><node>Struct.nwc</node></pathlink>
+                <objectattribute><name>Element ID</name><value>202</value></objectattribute>
+              </clashobject>
+            </clashobjects>
+          </clashresult>
+        </clashresults>
+      </clashtest>
+    </clashtests>
+  </batchtest>
+</exchange>

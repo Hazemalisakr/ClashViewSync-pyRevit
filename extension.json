@@ -1,0 +1,14 @@
+{
+    "builtin": "False",
+    "default_enabled": "True",
+    "type": "extension",
+    "rocket_mode_compatible": "True",
+    "name": "ClashView Sync",
+    "description": "Automated Navisworks Clash Detective XML synchronization for Autodesk Revit. Generates framed 3D crop boxes, linked element isolation, and Navisworks color overrides.",
+    "author": "Hazem Sakr",
+    "author_profile": "https://www.linkedin.com/in/hazem-sakr/",
+    "url": "https://github.com/Hazemalisakr/ClashViewSync-pyRevit",
+    "website": "https://www.linkedin.com/in/hazem-sakr/",
+    "image": "",
+    "dependencies": []
+}

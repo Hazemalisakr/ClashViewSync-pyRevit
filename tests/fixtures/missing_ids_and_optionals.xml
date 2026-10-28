@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<exchange units="m">
+  <batchtest name="Batch_EdgeCases" units="m">
+    <clashtests>
+      <clashtest name="Incomplete Test" status="Active">
+        <clashresults>
+          <clashresult name="Missing_Clashpoint_Clash" guid="c-bad-001" status="New">
+            <!-- No clashpoint element -->
+            <clashobjects>
+              <clashobject>
+                <pathlink><node>ModelA.nwc</node></pathlink>
+                <objectattribute><name>Element ID</name><value>NOT_A_NUMBER</value></objectattribute>
+              </clashobject>
+              <clashobject>
+                <pathlink><node>ModelB.nwc</node></pathlink>
+                <!-- Missing Element ID entirely -->
+                <objectattribute><name>Material</name><value>Steel</value></objectattribute>
+                <objectattribute><name>GUID</name><value>{ABCDEF-1234}</value></objectattribute>
+              </clashobject>
+            </clashobjects>
+          </clashresult>
+          <clashresult name="Single_Participant_Clash" guid="c-bad-002" status="New">
+            <clashpoint><pos3f x="1.0" y="2.0" z="3.0"/></clashpoint>
+            <clashobjects>
+              <!-- Only one participant -->
+              <clashobject>
+                <pathlink><node>ModelA.nwc</node></pathlink>
+                <objectattribute><name>Element ID</name><value>55555</value></objectattribute>
+              </clashobject>
+            </clashobjects>
+          </clashresult>
+          <clashresult name="Zero_Participants_Clash" guid="c-bad-003" status="New">
+            <clashpoint><pos3f x="5.0" y="5.0" z="5.0"/></clashpoint>
+            <!-- No clashobjects -->
+          </clashresult>
+        </clashresults>
+      </clashtest>
+    </clashtests>
+  </batchtest>
+</exchange>

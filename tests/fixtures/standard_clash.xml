@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<exchange xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://download.autodesk.com/us/navisworks/schemas/nw-exchange-12.0.xsd" units="m" filename="TestModel.nwf">
+  <batchtest name="Batch1" internal_name="Batch1" units="m">
+    <clashtests>
+      <clashtest name="MEP vs Architecture" test_type="hard" status="Active" tolerance="0.010">
+        <clashresults>
+          <clashresult name="Clash1" guid="c001-guid-test" status="Active" distance="-0.025">
+            <description>Hard clash between duct and wall</description>
+            <resultstatus>Active</resultstatus>
+            <clashpoint>
+              <pos3f x="10.500" y="20.000" z="3.500"/>
+            </clashpoint>
+            <clashobjects>
+              <clashobject>
+                <layer>Level 1</layer>
+                <pathlink>
+                  <node>MEP_Services.nwc</node>
+                  <node>HVAC</node>
+                  <node>Rectangular Duct</node>
+                  <node>300x200mm</node>
+                </pathlink>
+                <smarttags>
+                  <smarttag><name>Item Name</name><value>Rectangular Duct 300x200</value></smarttag>
+                  <smarttag><name>Category</name><value>Ducts</value></smarttag>
+                  <smarttag><name>File Name</name><value>MEP_Services.nwc</value></smarttag>
+                </smarttags>
+                <objectattribute>
+                  <name>Element ID</name>
+                  <value>1023456</value>
+                </objectattribute>
+              </clashobject>
+              <clashobject>
+                <layer>Level 1</layer>
+                <pathlink>
+                  <node>Arch_Core.nwc</node>
+                  <node>Walls</node>
+                  <node>Basic Wall</node>
+                  <node>Generic - 200mm</node>
+                </pathlink>
+                <smarttags>
+                  <smarttag><name>Item Name</name><value>Generic - 200mm</value></smarttag>
+                  <smarttag><name>Category</name><value>Walls</value></smarttag>
+                  <smarttag><name>File Name</name><value>Arch_Core.nwc</value></smarttag>
+                </smarttags>
+                <objectattribute>
+                  <name>Element ID</name>
+                  <value>2054321</value>
+                </objectattribute>
+              </clashobject>
+            </clashobjects>
+            <comments>
+              <comment status="Active">
+                <user>Coordinator</user>
+                <body href="none">Needs sleeve in wall</body>
+                <date>2026-10-25</date>
+              </comment>
+            </comments>
+          </clashresult>
+        </clashresults>
+      </clashtest>
+    </clashtests>
+  </batchtest>
+</exchange>

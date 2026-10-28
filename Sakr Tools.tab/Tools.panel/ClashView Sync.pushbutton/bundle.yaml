@@ -1,0 +1,9 @@
+title: "ClashView\nSync"
+tooltip: >
+  Enter a clash name (e.g. Clash10) and pick your 3D view:
+  1. Normal 3D Crop Box (on the 2 items)
+  2. Isolated 3D Crop Box
+  Automatically frames and opens the 3D clash view in Revit.
+  Hold SHIFT while clicking to choose a different XML report.
+author: "Hazem Sakr"
+min_revit_ver: 2023

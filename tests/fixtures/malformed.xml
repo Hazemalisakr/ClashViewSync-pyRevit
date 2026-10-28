@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<exchange units="m">
+  <batchtest name="Broken">
+    <clashtests>
+      <clashtest name="Unclosed Tag">
+        <clashresults>
+          <clashresult name="BrokenClash">
+            <!-- File truncated here without closing tags -->

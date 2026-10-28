@@ -1,0 +1,27 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# pyRevit user files
+*config.ini
+
+# Caches & Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Revit backup files
+*.[0-9][0-9][0-9][0-9].rvt
+*.[0-9][0-9][0-9][0-9].rfa
+
+# Operating System
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor / IDE configs
+.idea/
+.vscode/
+*.swp
+*.swo

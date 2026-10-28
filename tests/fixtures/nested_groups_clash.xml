@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<exchange units="m">
+  <batchtest name="Batch_Grouped" units="m">
+    <clashtests>
+      <clashtest name="Structure vs Pipes" test_type="clearance" status="Active" tolerance="0.050">
+        <clashresults>
+          <clashgroup name="Group_Level2_Pipes" guid="grp-guid-001" status="Reviewed">
+            <description>Grouped pipe clashes along corridor</description>
+            <clashpoint>
+              <pos3f x="15.000" y="30.000" z="4.000"/>
+            </clashpoint>
+            <clashresults>
+              <clashresult name="Clash_Pipe_1" guid="c-p-001" status="Reviewed" distance="-0.010">
+                <clashpoint><pos3f x="14.800" y="29.900" z="4.000"/></clashpoint>
+                <clashobjects>
+                  <clashobject>
+                    <pathlink><node>Pipes.nwc</node><node>Pipe 50mm</node></pathlink>
+                    <objectattribute><name>Element ID</name><value>301</value></objectattribute>
+                  </clashobject>
+                  <clashobject>
+                    <pathlink><node>Structure.nwc</node><node>Beam 400x600</node></pathlink>
+                    <objectattribute><name>Element ID</name><value>401</value></objectattribute>
+                  </clashobject>
+                </clashobjects>
+              </clashresult>
+              <clashresult name="Clash_Pipe_2" guid="c-p-002" status="Reviewed" distance="-0.015">
+                <clashpoint><pos3f x="15.200" y="30.100" z="4.000"/></clashpoint>
+                <clashobjects>
+                  <clashobject>
+                    <pathlink><node>Pipes.nwc</node><node>Pipe 65mm</node></pathlink>
+                    <objectattribute><name>Element ID</name><value>302</value></objectattribute>
+                  </clashobject>
+                  <clashobject>
+                    <pathlink><node>Structure.nwc</node><node>Beam 400x600</node></pathlink>
+                    <objectattribute><name>Element ID</name><value>401</value></objectattribute>
+                  </clashobject>
+                </clashobjects>
+              </clashresult>
+            </clashresults>
+          </clashgroup>
+          <clashresult name="Standalone_Clash_3" guid="c-p-003" status="New" distance="-0.030">
+            <clashpoint><pos3f x="20.000" y="40.000" z="4.000"/></clashpoint>
+            <clashobjects>
+              <clashobject>
+                <pathlink><node>Pipes.nwc</node><node>Drain</node></pathlink>
+                <objectattribute><name>Element ID</name><value>303</value></objectattribute>
+              </clashobject>
+              <clashobject>
+                <pathlink><node>Structure.nwc</node><node>Column 500x500</node></pathlink>
+                <objectattribute><name>Element ID</name><value>402</value></objectattribute>
+              </clashobject>
+            </clashobjects>
+          </clashresult>
+        </clashresults>
+      </clashtest>
+    </clashtests>
+  </batchtest>
+</exchange>

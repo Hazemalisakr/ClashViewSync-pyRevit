@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<exchange units="m">
+  <viewpoints>
+    <viewfolder name="Clashes">
+      <!-- Unambiguous match for Clash1 by GUID and Name -->
+      <view name="Clash1" guid="c001-guid-test">
+        <viewpoint focal="15.0" fov="45.0">
+          <camera projection="persp" near="0.1" far="500.0" aspect="1.333" height="8.0">
+            <position>
+              <pos3f x="15.000" y="25.000" z="8.000"/>
+            </position>
+            <rotation>
+              <quaternion a="0.0" b="0.0" c="0.3826834" d="0.9238795"/>
+            </rotation>
+          </camera>
+          <up>
+            <pos3f x="0.0" y="0.0" z="1.0"/>
+          </up>
+        </viewpoint>
+      </view>
+
+      <!-- Orthographic viewpoint test -->
+      <view name="Ortho_View_Test" guid="vp-ortho-001">
+        <viewpoint focal="20.0">
+          <camera projection="ortho" near="1.0" far="1000.0" aspect="1.5" height="12.0">
+            <position>
+              <pos3f x="50.000" y="50.000" z="50.000"/>
+            </position>
+            <rotation>
+              <quaternion a="0.270598" b="0.270598" c="0.653281" d="0.653281"/>
+            </rotation>
+          </camera>
+        </viewpoint>
+      </view>
+
+      <!-- Ambiguous pair: two different viewpoints with identical name and no clash guid match -->
+      <view name="Ambiguous_Clash" guid="amb-vp-001">
+        <viewpoint>
+          <camera projection="persp">
+            <position><pos3f x="1.0" y="1.0" z="1.0"/></position>
+            <rotation><quaternion a="0.0" b="0.0" c="0.0" d="1.0"/></rotation>
+          </camera>
+        </viewpoint>
+      </view>
+      <view name="Ambiguous_Clash" guid="amb-vp-002">
+        <viewpoint>
+          <camera projection="persp">
+            <position><pos3f x="2.0" y="2.0" z="2.0"/></position>
+            <rotation><quaternion a="0.0" b="0.0" c="0.0" d="1.0"/></rotation>
+          </camera>
+        </viewpoint>
+      </view>
+    </viewfolder>
+  </viewpoints>
+</exchange>
