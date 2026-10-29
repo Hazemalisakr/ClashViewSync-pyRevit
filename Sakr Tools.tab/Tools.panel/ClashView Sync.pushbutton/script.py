@@ -55,9 +55,79 @@ CONFIG_SECTION = "clashview_sync"
 OPT_NORMAL = "Normal 3D Crop Box (on the 2 items)"
 OPT_ISOLATED = "Isolated 3D Crop Box"
 
-# Safety net: Register ViewDeactivated handler to clean up stale CVS filters
-# This runs when ANY view is deactivated; we only act on CVS-owned views.
+# DirectContext3D Transient GPU Highlighting (zero DB writes, zero model elements)
+_DC3D_DLL = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), r"..\..\..\lib\ClashViewSync.DirectContext.dll")
+)
+
+def _get_dc3d_highlighter():
+    if not os.path.exists(_DC3D_DLL):
+        return None, None
+    try:
+        import clr
+        clr.AddReferenceToFileAndPath(_DC3D_DLL)
+        from ClashViewSync.DirectContext import ClashHighlighter, ClashMesh
+        return ClashHighlighter, ClashMesh
+    except Exception:
+        return None, None
+
+def _clear_directcontext3d_highlight(uidoc=None):
+    try:
+        hl, _ = _get_dc3d_highlighter()
+        if hl is not None:
+            hl.Clear(uidoc)
+    except Exception:
+        pass
+
+def _apply_directcontext3d_highlight(uidoc, view, res_a, res_b):
+    """Applies transient GPU highlight using DirectContext3D. Zero DB writes."""
+    try:
+        hl, mesh_cls = _get_dc3d_highlighter()
+        if hl is None or mesh_cls is None or uidoc is None or view is None:
+            return
+
+        import System.Collections.Generic as Generic
+        meshes = Generic.List[mesh_cls]()
+
+        # Item 1: Red (RGB 220, 30, 30, 35% transparency)
+        if res_a is not None and getattr(res_a, "element", None) is not None:
+            xf_a = res_a.link_instance.GetTotalTransform() if getattr(res_a, "is_linked", False) and res_a.link_instance else None
+            m_a = hl.ExtractElementMesh(res_a.element, xf_a, 220, 30, 30, 35, 1.004)
+            if m_a.Vertices.Count > 0:
+                meshes.Add(m_a)
+
+        # Item 2: Green (RGB 0, 200, 0, 35% transparency)
+        if res_b is not None and getattr(res_b, "element", None) is not None:
+            xf_b = res_b.link_instance.GetTotalTransform() if getattr(res_b, "is_linked", False) and res_b.link_instance else None
+            m_b = hl.ExtractElementMesh(res_b.element, xf_b, 0, 200, 0, 35, 1.004)
+            if m_b.Vertices.Count > 0:
+                meshes.Add(m_b)
+
+        if meshes.Count > 0:
+            hl.ShowMeshes(uidoc, view, meshes, None)
+    except Exception:
+        pass
+
+# Safety net: Register ViewDeactivated handler to clean up stale DC3D highlights
 def _register_view_deactivated_handler():
+    try:
+        from pyrevit import HOST_APP
+
+        def on_view_deactivated(sender, args):
+            try:
+                uiapp = sender
+                uidoc = uiapp.ActiveUIDocument if uiapp else None
+                _clear_directcontext3d_highlight(uidoc)
+            except Exception:
+                pass
+
+        uiapp = HOST_APP.uiapp
+        if uiapp is not None and hasattr(uiapp, "ViewDeactivated"):
+            uiapp.ViewDeactivated += on_view_deactivated
+    except Exception:
+        pass
+
+_register_view_deactivated_handler():
     """Registers a UIApplication.ViewDeactivated event handler to purge stale CVS filters."""
     try:
         import Autodesk.Revit.UI as UI
@@ -740,6 +810,10 @@ def main():
             pass
 
         if highlight_enabled and first_res:
+            try:
+                _apply_directcontext3d_highlight(revit.uidoc, first_view, first_res[0], first_res[1])
+            except Exception:
+                pass
             try:
                 _select_clashing_participants(revit.uidoc, first_res[0], first_res[1])
             except Exception:
