@@ -737,6 +737,71 @@ def _apply_linked_category_filter(view, host_doc, category, r=220, g=30, b=30, f
     return None
 
 
+def _apply_linked_element_filter(view, host_doc, category, element_id, r, g, b, filter_name_prefix="CVS_Clash"):
+    """Highlights ONLY one specific linked element in a host view.
+
+    Uses a view filter on the category with an Element Id (ID_PARAM) equals rule so that
+    other elements of the same category are NOT affected. Returns the filter ElementId or
+    None on failure. Never falls back to a category-wide filter.
+    """
+    try:
+        DB = _get_revit_db()
+        if DB is None or host_doc is None or view is None or category is None or element_id is None:
+            return None
+
+        import System.Collections.Generic as Generic
+
+        cat_name = getattr(category, "Name", "Category")
+        safe_cat_name = re.sub(r'[^a-zA-Z0-9_]', '_', cat_name)
+        filter_name = "{0}_{1}_{2}_{3}_{4}_{5}".format(
+            filter_name_prefix, safe_cat_name, element_id, r, g, b
+        )
+
+        filter_elem = None
+        for fe in DB.FilteredElementCollector(host_doc).OfClass(DB.ParameterFilterElement):
+            if getattr(fe, "Name", "") == filter_name:
+                filter_elem = fe
+                break
+
+        if filter_elem is None:
+            cat_list = Generic.List[DB.ElementId]()
+            cat_list.Add(category.Id)
+            rule = DB.ParameterFilterRuleFactory.CreateEqualsRule(
+                DB.ElementId(DB.BuiltInParameter.ID_PARAM),
+                create_revit_element_id(element_id),
+            )
+            elem_filter = DB.ElementParameterFilter(rule)
+            filter_elem = DB.ParameterFilterElement.Create(host_doc, filter_name, cat_list, elem_filter)
+
+        if not view.IsFilterApplied(filter_elem.Id):
+            view.AddFilter(filter_elem.Id)
+        ogs = _create_highlight_graphic_settings(host_doc, r, g, b)
+        if ogs is not None:
+            view.SetFilterOverrides(filter_elem.Id, ogs)
+        view.SetFilterVisibility(filter_elem.Id, True)
+        return filter_elem.Id
+    except Exception:
+        return None
+
+
+def _remove_clash_highlight_filters(view, host_doc):
+    """Removes every 'CVS_Clash*' view filter from the view (stale category-wide or element
+    filters from previous runs). Returns the number of filters removed."""
+    removed = 0
+    try:
+        for fid in list(view.GetFilters()):
+            try:
+                fe = host_doc.GetElement(fid)
+                if fe is not None and getattr(fe, "Name", "").startswith("CVS_Clash"):
+                    view.RemoveFilter(fid)
+                    removed += 1
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return removed
+
+
 def _highlight_participant(view, host_doc, res, r, g, b, label="Participant", diagnostics=None):
     """Applies vibrant color highlighting to a clash participant, supporting both Host and Linked elements."""
     if res is None or not getattr(res, "is_resolved", False):
@@ -751,21 +816,27 @@ def _highlight_participant(view, host_doc, res, r, g, b, label="Participant", di
         if eid is not None:
             return _highlight_element_color(view, eid, r=r, g=g, b=b, diagnostics=diagnostics)
     else:
-        # Linked element: Apply View Filter on the linked category in the host view
+        # Linked element: highlight ONLY this element via an Element-Id view filter
         elem = getattr(res, "element", None) or getattr(res, "linked_element", None)
         cat = getattr(elem, "Category", None) if elem is not None else None
-        if cat is not None and getattr(cat, "Id", None) is not None:
-            filter_id = _apply_linked_category_filter(
-                view, host_doc, cat, r=r, g=g, b=b, filter_name_prefix="CVS_Clash_{0}".format(label)
+        if cat is not None and getattr(cat, "Id", None) is not None and eid is not None:
+            filter_id = _apply_linked_element_filter(
+                view, host_doc, cat, eid, r, g, b, filter_name_prefix="CVS_Clash_{0}".format(label)
             )
             if filter_id is not None:
                 if diagnostics is not None:
                     diagnostics.append(
-                        "Highlighted linked {0} (Category '{1}') via host View Filter in RGB({2},{3},{4})".format(
-                            label, getattr(cat, "Name", ""), r, g, b
+                        "Highlighted linked {0} (element {1}, Category '{2}') via Element-Id view filter in RGB({3},{4},{5})".format(
+                            label, eid, getattr(cat, "Name", ""), r, g, b
                         )
                     )
                 return True
+            if diagnostics is not None:
+                diagnostics.append(
+                    "Warning: could not highlight linked {0} (element {1}) individually; skipped to avoid coloring the whole category.".format(
+                        label, eid
+                    )
+                )
     return False
 
 
@@ -1678,6 +1749,8 @@ def create_or_update_clash_view(
         #   Item 1 (Participant A) = Bright Red   RGB(220, 30, 30)
         #   Item 2 (Participant B) = Bright Green RGB(0, 200, 0)
         # Supports both Host elements (direct element override) and Linked elements (View Filter override)
+        # Always clear stale CVS_Clash filters first (old category-wide ones from earlier runs)
+        _remove_clash_highlight_filters(view, host_doc)
         if highlight_elements:
             _highlight_participant(
                 view, host_doc, res_a, r=220, g=30, b=30, label="Item1", diagnostics=diagnostics
