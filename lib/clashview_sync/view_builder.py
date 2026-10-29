@@ -784,29 +784,9 @@ def _apply_linked_element_filter(view, host_doc, category, element_id, r, g, b, 
         return None
 
 
-_HIGHLIGHT_APP_ID = "ClashViewSync"
-
-
-def _remove_highlight_directshapes(host_doc):
-    """Deletes DirectShape highlight proxies created by previous runs."""
-    DB = _get_revit_db()
-    removed = 0
-    try:
-        if DB is None or host_doc is None or not hasattr(DB, "DirectShape"):
-            return 0
-        stale = []
-        for ds in DB.FilteredElementCollector(host_doc).OfClass(DB.DirectShape):
-            if getattr(ds, "ApplicationId", "") == _HIGHLIGHT_APP_ID:
-                stale.append(ds.Id)
-        for sid in stale:
-            try:
-                host_doc.Delete(sid)
-                removed += 1
-            except Exception:
-                pass
-    except Exception:
-        pass
-    return removed
+# No DirectShape highlight proxies - pure DB-safe approach
+# Linked elements are highlighted via native Revit selection (Reference.CreateLinkReference)
+# Host elements use view element overrides (SetElementOverrides)
 
 
 def _collect_element_solids(elem):
@@ -833,114 +813,30 @@ def _collect_element_solids(elem):
     return solids
 
 
-def _highlight_linked_via_directshape(view, host_doc, res, r, g, b, label, diagnostics=None, proxy_ids=None):
-    """Highlights ONE linked element: copies its solids (transformed by the link transform)
-    into a tagged DirectShape in the host and colors that DirectShape in this view only.
-
-    Revit offers no per-element graphic override for linked elements, so this proxy is the
-    reliable way to color exactly the clashing element. Proxies are removed on every run.
-    """
-    DB = _get_revit_db()
-    try:
-        elem = getattr(res, "linked_element", None) or getattr(res, "element", None)
-        inst = getattr(res, "link_instance", None)
-        if DB is None or elem is None or inst is None or not hasattr(DB, "DirectShape"):
-            return False
-
-        xf = inst.GetTotalTransform()
-        solids = _collect_element_solids(elem)
-        if not solids:
-            if diagnostics is not None:
-                diagnostics.append("Warning: linked {0} has no solid geometry to highlight.".format(label))
-            return False
-
-        import System.Collections.Generic as Generic
-
-        shapes = Generic.List[DB.GeometryObject]()
-        for s in solids:
-            placed = None
-            try:
-                # Tiny uniform grow about the centroid so the proxy does not z-fight the real element
-                c = xf.OfPoint(s.ComputeCentroid())
-                k = 1.004
-                grow = DB.Transform.Identity
-                grow.BasisX = DB.XYZ(k, 0, 0)
-                grow.BasisY = DB.XYZ(0, k, 0)
-                grow.BasisZ = DB.XYZ(0, 0, k)
-                grow.Origin = DB.XYZ(c.X * (1 - k), c.Y * (1 - k), c.Z * (1 - k))
-                placed = DB.SolidUtils.CreateTransformed(s, grow.Multiply(xf))
-            except Exception:
-                placed = None
-            if placed is None:
-                placed = DB.SolidUtils.CreateTransformed(s, xf)
-            shapes.Add(placed)
-
-        ds = DB.DirectShape.CreateElement(host_doc, DB.ElementId(DB.BuiltInCategory.OST_GenericModel))
-        ds.ApplicationId = _HIGHLIGHT_APP_ID
-        ds.ApplicationDataId = "highlight_{0}".format(label)
-        try:
-            ds.Name = "CVS Highlight {0}".format(label)
-        except Exception:
-            pass
-        ds.SetShape(shapes)
-        if proxy_ids is not None:
-            try:
-                proxy_ids.append(int(get_element_id_value(ds.Id)))
-            except Exception:
-                pass
-        ogs = _create_highlight_graphic_settings(host_doc, r, g, b)
-        if ogs is not None:
-            view.SetElementOverrides(ds.Id, ogs)
-        try:
-            # Isolated mode hides non-participating model categories; keep the proxy's category visible
-            gm_id = DB.ElementId(DB.BuiltInCategory.OST_GenericModel)
-            if view.GetCategoryHidden(gm_id):
-                view.SetCategoryHidden(gm_id, False)
-        except Exception:
-            pass
-        if diagnostics is not None:
-            diagnostics.append(
-                "Highlighted linked {0} via color proxy ({1} solid(s)) in RGB({2},{3},{4})".format(
-                    label, len(solids), r, g, b
-                )
-            )
-        return True
-    except Exception as ex:
-        if diagnostics is not None:
-            diagnostics.append("Warning: color proxy failed for linked {0}: {1}".format(label, ex))
-        return False
-
-
-def _ensure_proxies_visible(view, proxy_ids):
-    """Safety net after isolation: unhide the color proxies and keep Generic Models visible."""
-    DB = _get_revit_db()
-    try:
-        if proxy_ids and hasattr(view, "UnhideElements"):
-            try:
-                view.UnhideElements(_make_element_id_collection(list(proxy_ids)))
-            except Exception:
-                pass
-        if DB is not None and proxy_ids:
-            gm_id = DB.ElementId(DB.BuiltInCategory.OST_GenericModel)
-            if view.GetCategoryHidden(gm_id):
-                view.SetCategoryHidden(gm_id, False)
-    except Exception:
-        pass
-
-
 def _remove_clash_highlight_filters(view, host_doc):
-    """Removes every 'CVS_Clash*' view filter from the view (stale category-wide or element
-    filters from previous runs) and deletes old highlight DirectShape proxies.
-    Returns the number of filters removed."""
+    """Removes every 'CVS_Clash*' view filter from the view and purges stale
+    CVS_Clash* ParameterFilterElements from host_doc. Returns the number of filters removed."""
     removed = 0
-    _remove_highlight_directshapes(host_doc)
     try:
-        for fid in list(view.GetFilters()):
+        if hasattr(view, "GetFilters"):
+            for fid in list(view.GetFilters()):
+                try:
+                    fe = host_doc.GetElement(fid) if hasattr(host_doc, "GetElement") else None
+                    if fe is not None and getattr(fe, "Name", "").startswith("CVS_Clash"):
+                        view.RemoveFilter(fid)
+                        removed += 1
+                except Exception:
+                    pass
+        DB = _get_revit_db()
+        if DB is not None and hasattr(DB, "FilteredElementCollector") and hasattr(DB, "ParameterFilterElement") and hasattr(host_doc, "Delete"):
             try:
-                fe = host_doc.GetElement(fid)
-                if fe is not None and getattr(fe, "Name", "").startswith("CVS_Clash"):
-                    view.RemoveFilter(fid)
-                    removed += 1
+                collector = DB.FilteredElementCollector(host_doc).OfClass(DB.ParameterFilterElement)
+                for pfe in list(collector):
+                    if getattr(pfe, "Name", "").startswith("CVS_Clash"):
+                        try:
+                            host_doc.Delete(pfe.Id)
+                        except Exception:
+                            pass
             except Exception:
                 pass
     except Exception:
@@ -949,7 +845,13 @@ def _remove_clash_highlight_filters(view, host_doc):
 
 
 def _highlight_participant(view, host_doc, res, r, g, b, label="Participant", diagnostics=None, proxy_ids=None):
-    """Applies vibrant color highlighting to a clash participant, supporting both Host and Linked elements."""
+    """Applies vibrant color highlighting to a clash participant, supporting both Host and Linked elements.
+
+    For Host elements: Uses view element overrides (SetElementOverrides) - solid Red/Green.
+    For Linked elements: Returns True to indicate "handled by native selection later" -
+    the actual selection happens in script.py via Reference.CreateLinkReference.
+    No DirectShape proxies are ever created.
+    """
     if res is None or not getattr(res, "is_resolved", False):
         return False
 
@@ -962,30 +864,15 @@ def _highlight_participant(view, host_doc, res, r, g, b, label="Participant", di
         if eid is not None:
             return _highlight_element_color(view, eid, r=r, g=g, b=b, diagnostics=diagnostics)
     else:
-        # Linked element: preferred = DirectShape color proxy (exactly this element)
-        if _highlight_linked_via_directshape(view, host_doc, res, r, g, b, label, diagnostics, proxy_ids):
-            return True
-        # Secondary: Element-Id view filter (only this element)
-        elem = getattr(res, "linked_element", None) or getattr(res, "element", None)
-        cat = getattr(elem, "Category", None) if elem is not None else None
-        if cat is not None and getattr(cat, "Id", None) is not None and eid is not None:
-            filter_id = _apply_linked_element_filter(
-                view, host_doc, cat, eid, r, g, b, filter_name_prefix="CVS_Clash_{0}".format(label)
+        # Linked element: No per-element override possible in Revit API.
+        # We signal success here; the actual visual highlight is achieved via
+        # native Revit selection (Reference.CreateLinkReference) in script.py.
+        # This avoids creating ANY model elements (DirectShapes, filters, etc.).
+        if diagnostics is not None:
+            diagnostics.append(
+                "Linked {0} (element {1}) will be highlighted via native selection".format(label, eid)
             )
-            if filter_id is not None:
-                if diagnostics is not None:
-                    diagnostics.append(
-                        "Highlighted linked {0} (element {1}, Category '{2}') via Element-Id view filter in RGB({3},{4},{5})".format(
-                            label, eid, getattr(cat, "Name", ""), r, g, b
-                        )
-                    )
-                return True
-            if diagnostics is not None:
-                diagnostics.append(
-                    "Warning: could not highlight linked {0} (element {1}) individually; skipped to avoid coloring the whole category.".format(
-                        label, eid
-                    )
-                )
+        return True
     return False
 
 
@@ -1781,18 +1668,16 @@ def create_or_update_clash_view(
                 if lid is not None:
                     participating_link_ids.add(int(lid))
 
-        # Create color highlights BEFORE isolation so the proxy shapes of linked participants
-        # can be included in the isolate set (otherwise isolation would hide them).
-        proxy_ids = []
+        # Create color highlights BEFORE isolation
         _remove_clash_highlight_filters(view, host_doc)
         if highlight_elements:
             _highlight_participant(
                 view, host_doc, res_a, r=220, g=30, b=30, label="Item1",
-                diagnostics=diagnostics, proxy_ids=proxy_ids,
+                diagnostics=diagnostics,
             )
             _highlight_participant(
                 view, host_doc, res_b, r=0, g=200, b=0, label="Item2",
-                diagnostics=diagnostics, proxy_ids=proxy_ids,
+                diagnostics=diagnostics,
             )
 
         if isolation_method == IsolationMethod.CONTEXT_SECTION_BOX_ONLY or mode == "context":
@@ -1822,9 +1707,6 @@ def create_or_update_clash_view(
                         host_ids_to_isolate.append(int(eid))
 
             if host_ids_to_isolate:
-                for pid in proxy_ids:
-                    if pid not in host_ids_to_isolate:
-                        host_ids_to_isolate.append(pid)
                 id_collection = _make_element_id_collection(host_ids_to_isolate)
                 view.IsolateElementsTemporary(id_collection)
                 isolated_host_ids = list(host_ids_to_isolate)
@@ -1855,9 +1737,6 @@ def create_or_update_clash_view(
                         host_ids_to_isolate.append(int(eid))
 
             elements_to_isolate = list(host_ids_to_isolate)
-            for pid in proxy_ids:
-                if pid not in elements_to_isolate:
-                    elements_to_isolate.append(pid)
             for lid in sorted(participating_link_ids):
                 if lid not in elements_to_isolate:
                     elements_to_isolate.append(lid)
@@ -1914,9 +1793,7 @@ def create_or_update_clash_view(
             )
 
         # (Highlights were already applied before isolation, see above.)
-        if highlight_elements:
-            _ensure_proxies_visible(view, proxy_ids)
-        else:
+        if not highlight_elements:
             # If highlighting is disabled, ensure host participants have clean default overrides
             DB = _get_revit_db()
             for r in (res_a, res_b):
@@ -1940,10 +1817,6 @@ def create_or_update_clash_view(
             isolate_clash_participant_categories(
                 view, host_doc, res_a, res_b, mode=mode, diagnostics=diagnostics
             )
-            # That step hides every non-participating model category (incl. Generic Models, which
-            # holds the color proxies), so re-assert proxy visibility as the very last view change.
-            if highlight_elements:
-                _ensure_proxies_visible(view, proxy_ids)
         # Assign View Name safely (renaming view if mode changed and desired name is available)
         if getattr(view, "Name", None) != resolved_name:
             other_views = _collect_host_view3ds(host_doc)

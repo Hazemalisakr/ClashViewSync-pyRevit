@@ -55,6 +55,70 @@ CONFIG_SECTION = "clashview_sync"
 OPT_NORMAL = "Normal 3D Crop Box (on the 2 items)"
 OPT_ISOLATED = "Isolated 3D Crop Box"
 
+# Safety net: Register ViewDeactivated handler to clean up stale CVS filters
+# This runs when ANY view is deactivated; we only act on CVS-owned views.
+def _register_view_deactivated_handler():
+    """Registers a UIApplication.ViewDeactivated event handler to purge stale CVS filters."""
+    try:
+        import Autodesk.Revit.UI as UI
+        import Autodesk.Revit.DB as DB
+        import Autodesk.Revit.DB.ExtensibleStorage as ES
+        import System
+
+        CLASHVIEW_SCHEMA_GUID = System.Guid("8E4B7C92-3F1D-4A65-9B2E-7C5D1A8F0E34")
+        CLASHVIEW_TOOL_ID = "ClashViewSync"
+
+        def _is_cvs_view(view):
+            if view is None or not hasattr(view, "GetEntity"):
+                return False
+            try:
+                schema = ES.Schema.Lookup(CLASHVIEW_SCHEMA_GUID)
+                if schema is None:
+                    return False
+                entity = view.GetEntity(schema)
+                if entity is not None and entity.IsValid():
+                    field = schema.GetField("ToolId")
+                    if field is not None:
+                        val = entity.Get[System.String](field)
+                        return val == CLASHVIEW_TOOL_ID
+            except Exception:
+                pass
+            return False
+
+        def _purge_cvs_filters(doc, view):
+            """Removes all CVS_Clash* ParameterFilterElements from a view."""
+            try:
+                for fid in list(view.GetFilters()):
+                    try:
+                        fe = doc.GetElement(fid)
+                        if fe is not None and getattr(fe, "Name", "").startswith("CVS_Clash"):
+                            view.RemoveFilter(fid)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        def on_view_deactivated(sender, args):
+            """Event handler: clean up stale filters when a CVS view is deactivated."""
+            try:
+                uiapp = sender
+                doc = uiapp.ActiveUIDocument.Document if uiapp.ActiveUIDocument else None
+                view = args.View if hasattr(args, "View") else None
+                if doc is not None and view is not None and _is_cvs_view(view):
+                    _purge_cvs_filters(doc, view)
+            except Exception:
+                pass
+
+        # Register the handler
+        uiapp = __revit__ if "__revit__" in globals() else None
+        if uiapp is not None:
+            uiapp.ViewDeactivated += on_view_deactivated
+    except Exception:
+        pass
+
+# Call registration at module load
+_register_view_deactivated_handler()
+
 
 _MAIN_XAML = """
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -574,156 +638,7 @@ def _select_clashing_participants(uidoc, res_a, res_b):
         pass
 
 
-def _find_unrelated_linked_elements_in_section_box(view, res_a, res_b):
-    """Finds non-clashing elements from participating linked models that fall inside view's section box.
 
-    Returns a list of DB.Reference objects created via Reference.CreateLinkReference(link_inst).
-    """
-    try:
-        import Autodesk.Revit.DB as DB
-    except Exception:
-        return []
-
-    unrelated_refs = []
-    if view is None or not hasattr(view, "GetSectionBox"):
-        return unrelated_refs
-
-    try:
-        sbox = view.GetSectionBox()
-    except Exception:
-        sbox = None
-    if sbox is None:
-        return unrelated_refs
-
-    # Collect the 8 corners of the section box in host world coordinates
-    s_min = sbox.Min
-    s_max = sbox.Max
-    local_corners = [
-        DB.XYZ(s_min.X, s_min.Y, s_min.Z),
-        DB.XYZ(s_min.X, s_min.Y, s_max.Z),
-        DB.XYZ(s_min.X, s_max.Y, s_min.Z),
-        DB.XYZ(s_min.X, s_max.Y, s_max.Z),
-        DB.XYZ(s_max.X, s_min.Y, s_min.Z),
-        DB.XYZ(s_max.X, s_min.Y, s_max.Z),
-        DB.XYZ(s_max.X, s_max.Y, s_min.Z),
-        DB.XYZ(s_max.X, s_max.Y, s_max.Z),
-    ]
-    s_tf = getattr(sbox, "Transform", None)
-    if s_tf is not None and not getattr(s_tf, "IsIdentity", True):
-        host_corners = [s_tf.OfPoint(pt) for pt in local_corners]
-    else:
-        host_corners = local_corners
-
-    for res in (res_a, res_b):
-        if res is None or not getattr(res, "is_resolved", False) or not getattr(res, "is_linked", False):
-            continue
-
-        link_inst = getattr(res, "link_instance", None)
-        if link_inst is None:
-            continue
-
-        linked_doc = None
-        try:
-            linked_doc = link_inst.GetLinkDocument()
-        except Exception:
-            pass
-        if linked_doc is None:
-            continue
-
-        clashing_id = getattr(res, "resolved_element_id", None)
-        if clashing_id is None:
-            continue
-        clashing_id = int(clashing_id)
-
-        clashing_elem = getattr(res, "element", None)
-        if clashing_elem is None:
-            try:
-                clashing_elem = linked_doc.GetElement(DB.ElementId(clashing_id))
-            except Exception:
-                pass
-        if clashing_elem is None:
-            continue
-
-        cat = getattr(clashing_elem, "Category", None)
-        if cat is None or getattr(cat, "Id", None) is None:
-            continue
-        cat_id = cat.Id
-
-        # Transform host corners into linked document coordinates
-        transform = link_inst.GetTotalTransform()
-        inv_transform = transform.Inverse
-        tx_pts = [inv_transform.OfPoint(pt) for pt in host_corners]
-
-        min_x = min(pt.X for pt in tx_pts)
-        min_y = min(pt.Y for pt in tx_pts)
-        min_z = min(pt.Z for pt in tx_pts)
-        max_x = max(pt.X for pt in tx_pts)
-        max_y = max(pt.Y for pt in tx_pts)
-        max_z = max(pt.Z for pt in tx_pts)
-
-        buf = 1.0
-        outline = DB.Outline(
-            DB.XYZ(min_x - buf, min_y - buf, min_z - buf),
-            DB.XYZ(max_x + buf, max_y + buf, max_z + buf),
-        )
-        bbox_filter = DB.BoundingBoxIntersectsFilter(outline)
-
-        try:
-            collector = (
-                DB.FilteredElementCollector(linked_doc)
-                .OfCategoryId(cat_id)
-                .WherePasses(bbox_filter)
-                .WhereElementIsNotElementType()
-            )
-            for elem in collector:
-                eid_val = elem.Id.IntegerValue if hasattr(elem.Id, "IntegerValue") else elem.Id.Value
-                if int(eid_val) != clashing_id:
-                    try:
-                        base_ref = DB.Reference(elem)
-                        if hasattr(base_ref, "CreateLinkReference"):
-                            link_ref = base_ref.CreateLinkReference(link_inst)
-                            if link_ref is not None:
-                                unrelated_refs.append(link_ref)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-    return unrelated_refs
-
-
-def _hide_unrelated_linked_elements(uidoc, view, res_a, res_b):
-    """Collects non-clashing linked elements within view's section box and executes UI HideElements."""
-    if uidoc is None or view is None:
-        return False
-
-    try:
-        import Autodesk.Revit.DB as DB
-        import Autodesk.Revit.UI as UI
-        import System.Collections.Generic as Generic
-
-        unrelated_refs = _find_unrelated_linked_elements_in_section_box(view, res_a, res_b)
-        if not unrelated_refs:
-            return False
-
-        ref_list = Generic.List[DB.Reference]()
-        for r in unrelated_refs:
-            ref_list.Add(r)
-
-        uidoc.Selection.SetReferences(ref_list)
-
-        hide_cmd = UI.RevitCommandId.LookupPostableCommandId(UI.PostableCommand.HideElements)
-        if hide_cmd is not None:
-            ui_app = getattr(uidoc, "Application", None)
-            if ui_app is not None:
-                try:
-                    ui_app.PostCommand(hide_cmd)
-                    return True
-                except Exception:
-                    pass
-    except Exception:
-        pass
-    return False
 
 
 def main():
@@ -824,17 +739,13 @@ def main():
         except Exception:
             pass
 
-        hidden_linked = False
-        if mode == "pair" and first_res:
-            hidden_linked = _hide_unrelated_linked_elements(
-                revit.uidoc, first_view, first_res[0], first_res[1]
-            )
-
-        if not hidden_linked and first_res:
+        if highlight_enabled and first_res:
             try:
                 _select_clashing_participants(revit.uidoc, first_res[0], first_res[1])
             except Exception:
                 pass
+
+
 
     if errors:
         forms.alert(
