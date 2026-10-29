@@ -1940,7 +1940,10 @@ def create_or_update_clash_view(
             isolate_clash_participant_categories(
                 view, host_doc, res_a, res_b, mode=mode, diagnostics=diagnostics
             )
-
+            # That step hides every non-participating model category (incl. Generic Models, which
+            # holds the color proxies), so re-assert proxy visibility as the very last view change.
+            if highlight_elements:
+                _ensure_proxies_visible(view, proxy_ids)
         # Assign View Name safely (renaming view if mode changed and desired name is available)
         if getattr(view, "Name", None) != resolved_name:
             other_views = _collect_host_view3ds(host_doc)
