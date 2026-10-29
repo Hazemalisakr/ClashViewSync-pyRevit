@@ -55,11 +55,11 @@ CONFIG_SECTION = "clashview_sync"
 OPT_NORMAL = "Normal 3D Crop Box (on the 2 items)"
 OPT_ISOLATED = "Isolated 3D Crop Box"
 
-# Safety net: Register ViewDeactivated handler to clean up stale CVS filters
-# This runs when ANY view is deactivated; we only act on CVS-owned views.
-def _register_view_deactivated_handler():
-    """Registers a UIApplication.ViewDeactivated event handler to purge stale CVS filters."""
+# Lifecycle handlers: Auto-purge highlight proxies & filters on save, sync, and view deactivation
+def _register_cleanup_handlers():
+    """Registers document save/sync and view change handlers to guarantee zero model pollution."""
     try:
+        from pyrevit import HOST_APP
         import Autodesk.Revit.UI as UI
         import Autodesk.Revit.DB as DB
         import Autodesk.Revit.DB.ExtensibleStorage as ES
@@ -68,56 +68,93 @@ def _register_view_deactivated_handler():
         CLASHVIEW_SCHEMA_GUID = System.Guid("8E4B7C92-3F1D-4A65-9B2E-7C5D1A8F0E34")
         CLASHVIEW_TOOL_ID = "ClashViewSync"
 
-        def _is_cvs_view(view):
-            if view is None or not hasattr(view, "GetEntity"):
-                return False
+        def _purge_all_cvs_proxies(doc):
+            if doc is None or getattr(doc, "IsReadOnly", False):
+                return
             try:
-                schema = ES.Schema.Lookup(CLASHVIEW_SCHEMA_GUID)
-                if schema is None:
-                    return False
-                entity = view.GetEntity(schema)
-                if entity is not None and entity.IsValid():
-                    field = schema.GetField("ToolId")
-                    if field is not None:
-                        val = entity.Get[System.String](field)
-                        return val == CLASHVIEW_TOOL_ID
+                stale_ds = []
+                for ds in DB.FilteredElementCollector(doc).OfClass(DB.DirectShape):
+                    if getattr(ds, "ApplicationId", "") == "ClashViewSync":
+                        stale_ds.append(ds.Id)
+                stale_pf = []
+                for pf in DB.FilteredElementCollector(doc).OfClass(DB.ParameterFilterElement):
+                    if getattr(pf, "Name", "").startswith("CVS_Clash"):
+                        stale_pf.append(pf.Id)
+
+                if stale_ds or stale_pf:
+                    t = DB.Transaction(doc, "Purge CVS Highlights")
+                    t.Start()
+                    for sid in stale_ds:
+                        try:
+                            doc.Delete(sid)
+                        except Exception:
+                            pass
+                    for fid in stale_pf:
+                        try:
+                            doc.Delete(fid)
+                        except Exception:
+                            pass
+                    t.Commit()
             except Exception:
                 pass
-            return False
 
-        def _purge_cvs_filters(doc, view):
-            """Removes all CVS_Clash* ParameterFilterElements from a view."""
+        def on_document_saving(sender, args):
             try:
-                for fid in list(view.GetFilters()):
-                    try:
-                        fe = doc.GetElement(fid)
-                        if fe is not None and getattr(fe, "Name", "").startswith("CVS_Clash"):
-                            view.RemoveFilter(fid)
-                    except Exception:
-                        pass
+                doc = getattr(args, "Document", None)
+                if doc is not None:
+                    _purge_all_cvs_proxies(doc)
             except Exception:
                 pass
 
         def on_view_deactivated(sender, args):
-            """Event handler: clean up stale filters when a CVS view is deactivated."""
             try:
                 uiapp = sender
-                doc = uiapp.ActiveUIDocument.Document if uiapp.ActiveUIDocument else None
-                view = args.View if hasattr(args, "View") else None
-                if doc is not None and view is not None and _is_cvs_view(view):
-                    _purge_cvs_filters(doc, view)
+                doc = uiapp.ActiveUIDocument.Document if uiapp and uiapp.ActiveUIDocument else None
+                view = getattr(args, "View", None)
+                if doc is not None and view is not None:
+                    # Clean up view filters
+                    for fid in list(view.GetFilters()):
+                        try:
+                            fe = doc.GetElement(fid)
+                            if fe is not None and getattr(fe, "Name", "").startswith("CVS_Clash"):
+                                view.RemoveFilter(fid)
+                        except Exception:
+                            pass
             except Exception:
                 pass
 
-        # Register the handler
-        uiapp = __revit__ if "__revit__" in globals() else None
-        if uiapp is not None:
-            uiapp.ViewDeactivated += on_view_deactivated
+        def on_view_activated(sender, args):
+            try:
+                uiapp = sender
+                doc = uiapp.ActiveUIDocument.Document if uiapp and uiapp.ActiveUIDocument else None
+                prev_view = getattr(args, "PreviousActiveView", None)
+                curr_view = getattr(args, "CurrentActiveView", None)
+                if prev_view and prev_view.Name.startswith("CVS_") and (not curr_view or not curr_view.Name.startswith("CVS_")):
+                    if doc is not None:
+                        _purge_all_cvs_proxies(doc)
+            except Exception:
+                pass
+
+        app = HOST_APP.app
+        uiapp = HOST_APP.uiapp
+
+        if not getattr(HOST_APP, "_cvs_handlers_registered", False):
+            if app is not None:
+                if hasattr(app, "DocumentSaving"):
+                    app.DocumentSaving += on_document_saving
+                if hasattr(app, "DocumentSynchronizingWithCentral"):
+                    app.DocumentSynchronizingWithCentral += on_document_saving
+            if uiapp is not None:
+                if hasattr(uiapp, "ViewDeactivated"):
+                    uiapp.ViewDeactivated += on_view_deactivated
+                if hasattr(uiapp, "ViewActivated"):
+                    uiapp.ViewActivated += on_view_activated
+            HOST_APP._cvs_handlers_registered = True
     except Exception:
         pass
 
 # Call registration at module load
-_register_view_deactivated_handler()
+_register_cleanup_handlers()
 
 
 _MAIN_XAML = """
