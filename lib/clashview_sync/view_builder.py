@@ -833,7 +833,7 @@ def _collect_element_solids(elem):
     return solids
 
 
-def _highlight_linked_via_directshape(view, host_doc, res, r, g, b, label, diagnostics=None):
+def _highlight_linked_via_directshape(view, host_doc, res, r, g, b, label, diagnostics=None, proxy_ids=None):
     """Highlights ONE linked element: copies its solids (transformed by the link transform)
     into a tagged DirectShape in the host and colors that DirectShape in this view only.
 
@@ -883,7 +883,11 @@ def _highlight_linked_via_directshape(view, host_doc, res, r, g, b, label, diagn
         except Exception:
             pass
         ds.SetShape(shapes)
-
+        if proxy_ids is not None:
+            try:
+                proxy_ids.append(int(get_element_id_value(ds.Id)))
+            except Exception:
+                pass
         ogs = _create_highlight_graphic_settings(host_doc, r, g, b)
         if ogs is not None:
             view.SetElementOverrides(ds.Id, ogs)
@@ -907,6 +911,23 @@ def _highlight_linked_via_directshape(view, host_doc, res, r, g, b, label, diagn
         return False
 
 
+def _ensure_proxies_visible(view, proxy_ids):
+    """Safety net after isolation: unhide the color proxies and keep Generic Models visible."""
+    DB = _get_revit_db()
+    try:
+        if proxy_ids and hasattr(view, "UnhideElements"):
+            try:
+                view.UnhideElements(_make_element_id_collection(list(proxy_ids)))
+            except Exception:
+                pass
+        if DB is not None and proxy_ids:
+            gm_id = DB.ElementId(DB.BuiltInCategory.OST_GenericModel)
+            if view.GetCategoryHidden(gm_id):
+                view.SetCategoryHidden(gm_id, False)
+    except Exception:
+        pass
+
+
 def _remove_clash_highlight_filters(view, host_doc):
     """Removes every 'CVS_Clash*' view filter from the view (stale category-wide or element
     filters from previous runs) and deletes old highlight DirectShape proxies.
@@ -927,7 +948,7 @@ def _remove_clash_highlight_filters(view, host_doc):
     return removed
 
 
-def _highlight_participant(view, host_doc, res, r, g, b, label="Participant", diagnostics=None):
+def _highlight_participant(view, host_doc, res, r, g, b, label="Participant", diagnostics=None, proxy_ids=None):
     """Applies vibrant color highlighting to a clash participant, supporting both Host and Linked elements."""
     if res is None or not getattr(res, "is_resolved", False):
         return False
@@ -942,7 +963,7 @@ def _highlight_participant(view, host_doc, res, r, g, b, label="Participant", di
             return _highlight_element_color(view, eid, r=r, g=g, b=b, diagnostics=diagnostics)
     else:
         # Linked element: preferred = DirectShape color proxy (exactly this element)
-        if _highlight_linked_via_directshape(view, host_doc, res, r, g, b, label, diagnostics):
+        if _highlight_linked_via_directshape(view, host_doc, res, r, g, b, label, diagnostics, proxy_ids):
             return True
         # Secondary: Element-Id view filter (only this element)
         elem = getattr(res, "linked_element", None) or getattr(res, "element", None)
@@ -1760,6 +1781,20 @@ def create_or_update_clash_view(
                 if lid is not None:
                     participating_link_ids.add(int(lid))
 
+        # Create color highlights BEFORE isolation so the proxy shapes of linked participants
+        # can be included in the isolate set (otherwise isolation would hide them).
+        proxy_ids = []
+        _remove_clash_highlight_filters(view, host_doc)
+        if highlight_elements:
+            _highlight_participant(
+                view, host_doc, res_a, r=220, g=30, b=30, label="Item1",
+                diagnostics=diagnostics, proxy_ids=proxy_ids,
+            )
+            _highlight_participant(
+                view, host_doc, res_b, r=0, g=200, b=0, label="Item2",
+                diagnostics=diagnostics, proxy_ids=proxy_ids,
+            )
+
         if isolation_method == IsolationMethod.CONTEXT_SECTION_BOX_ONLY or mode == "context":
             # Mode B: Keep surrounding context visible inside section box; restore all categories & links
             restore_context_visibility(
@@ -1787,6 +1822,9 @@ def create_or_update_clash_view(
                         host_ids_to_isolate.append(int(eid))
 
             if host_ids_to_isolate:
+                for pid in proxy_ids:
+                    if pid not in host_ids_to_isolate:
+                        host_ids_to_isolate.append(pid)
                 id_collection = _make_element_id_collection(host_ids_to_isolate)
                 view.IsolateElementsTemporary(id_collection)
                 isolated_host_ids = list(host_ids_to_isolate)
@@ -1817,6 +1855,9 @@ def create_or_update_clash_view(
                         host_ids_to_isolate.append(int(eid))
 
             elements_to_isolate = list(host_ids_to_isolate)
+            for pid in proxy_ids:
+                if pid not in elements_to_isolate:
+                    elements_to_isolate.append(pid)
             for lid in sorted(participating_link_ids):
                 if lid not in elements_to_isolate:
                     elements_to_isolate.append(lid)
@@ -1872,20 +1913,9 @@ def create_or_update_clash_view(
                 )
             )
 
-        # Apply Navisworks-style Red/Green color highlighting to participants (both Mode A & Mode B)
-        # Matches Navisworks Clash Detective conventions:
-        #   Item 1 (Participant A) = Bright Red   RGB(220, 30, 30)
-        #   Item 2 (Participant B) = Bright Green RGB(0, 200, 0)
-        # Supports both Host elements (direct element override) and Linked elements (View Filter override)
-        # Always clear stale CVS_Clash filters first (old category-wide ones from earlier runs)
-        _remove_clash_highlight_filters(view, host_doc)
+        # (Highlights were already applied before isolation, see above.)
         if highlight_elements:
-            _highlight_participant(
-                view, host_doc, res_a, r=220, g=30, b=30, label="Item1", diagnostics=diagnostics
-            )
-            _highlight_participant(
-                view, host_doc, res_b, r=0, g=200, b=0, label="Item2", diagnostics=diagnostics
-            )
+            _ensure_proxies_visible(view, proxy_ids)
         else:
             # If highlighting is disabled, ensure host participants have clean default overrides
             DB = _get_revit_db()
