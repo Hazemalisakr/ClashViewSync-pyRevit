@@ -120,68 +120,23 @@ def _register_view_deactivated_handler():
                 _clear_directcontext3d_highlight(uidoc)
             except Exception:
                 pass
+            try:
+                uiapp = sender
+                doc = uiapp.ActiveUIDocument.Document if (uiapp and uiapp.ActiveUIDocument) else None
+                view = args.View if hasattr(args, "View") else None
+                if doc is not None and view is not None:
+                    for fid in list(view.GetFilters()):
+                        try:
+                            fe = doc.GetElement(fid)
+                            if fe is not None and getattr(fe, "Name", "").startswith("CVS_Clash"):
+                                view.RemoveFilter(fid)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
         uiapp = HOST_APP.uiapp
         if uiapp is not None and hasattr(uiapp, "ViewDeactivated"):
-            uiapp.ViewDeactivated += on_view_deactivated
-    except Exception:
-        pass
-
-_register_view_deactivated_handler():
-    """Registers a UIApplication.ViewDeactivated event handler to purge stale CVS filters."""
-    try:
-        import Autodesk.Revit.UI as UI
-        import Autodesk.Revit.DB as DB
-        import Autodesk.Revit.DB.ExtensibleStorage as ES
-        import System
-
-        CLASHVIEW_SCHEMA_GUID = System.Guid("8E4B7C92-3F1D-4A65-9B2E-7C5D1A8F0E34")
-        CLASHVIEW_TOOL_ID = "ClashViewSync"
-
-        def _is_cvs_view(view):
-            if view is None or not hasattr(view, "GetEntity"):
-                return False
-            try:
-                schema = ES.Schema.Lookup(CLASHVIEW_SCHEMA_GUID)
-                if schema is None:
-                    return False
-                entity = view.GetEntity(schema)
-                if entity is not None and entity.IsValid():
-                    field = schema.GetField("ToolId")
-                    if field is not None:
-                        val = entity.Get[System.String](field)
-                        return val == CLASHVIEW_TOOL_ID
-            except Exception:
-                pass
-            return False
-
-        def _purge_cvs_filters(doc, view):
-            """Removes all CVS_Clash* ParameterFilterElements from a view."""
-            try:
-                for fid in list(view.GetFilters()):
-                    try:
-                        fe = doc.GetElement(fid)
-                        if fe is not None and getattr(fe, "Name", "").startswith("CVS_Clash"):
-                            view.RemoveFilter(fid)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-        def on_view_deactivated(sender, args):
-            """Event handler: clean up stale filters when a CVS view is deactivated."""
-            try:
-                uiapp = sender
-                doc = uiapp.ActiveUIDocument.Document if uiapp.ActiveUIDocument else None
-                view = args.View if hasattr(args, "View") else None
-                if doc is not None and view is not None and _is_cvs_view(view):
-                    _purge_cvs_filters(doc, view)
-            except Exception:
-                pass
-
-        # Register the handler
-        uiapp = __revit__ if "__revit__" in globals() else None
-        if uiapp is not None:
             uiapp.ViewDeactivated += on_view_deactivated
     except Exception:
         pass
