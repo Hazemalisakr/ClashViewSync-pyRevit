@@ -386,6 +386,8 @@ class ClashViewSyncWindow(forms.WPFWindow):
         self.btn_normal.Click += self._on_normal
         self.btn_isolated.Click += self._on_isolated
         self.btn_author.Click += self._on_author_click
+        self.chk_highlight.Checked += self._on_highlight_changed
+        self.chk_highlight.Unchecked += self._on_highlight_changed
 
         # Set highlight checkbox state from config
         saved_hl = getattr(config, "highlight_elements", True)
@@ -517,6 +519,18 @@ class ClashViewSyncWindow(forms.WPFWindow):
         script.save_config()
 
         self.Close()
+
+    def _on_highlight_changed(self, sender, args):
+        self.highlight_enabled = bool(self.chk_highlight.IsChecked)
+        self.config.highlight_elements = self.highlight_enabled
+        if not self.highlight_enabled:
+            try:
+                if getattr(revit, "uidoc", None) is not None:
+                    _clear_directcontext3d_highlight(revit.uidoc)
+                    if hasattr(revit.uidoc, "RefreshActiveView"):
+                        revit.uidoc.RefreshActiveView()
+            except Exception:
+                pass
 
     def _on_author_click(self, sender, args):
         """Opens Hazem Sakr's LinkedIn profile in the default web browser."""
@@ -841,6 +855,13 @@ def main():
                 pass
             try:
                 _select_clashing_participants(revit.uidoc, first_res[0], first_res[1])
+            except Exception:
+                pass
+        else:
+            try:
+                _clear_directcontext3d_highlight(revit.uidoc)
+                if hasattr(revit.uidoc, "RefreshActiveView"):
+                    revit.uidoc.RefreshActiveView()
             except Exception:
                 pass
 
