@@ -9,11 +9,13 @@
 
 ---
 
-## 🎬 Video Overview
+## 🎬 Live Demo & Video Overview
 
-https://github.com/Hazemalisakr/ClashViewSync-pyRevit/raw/main/media/ClashViewSync_Widescreen_16x9.mp4
+<p align="center">
+  <img src="media/clashview_demo.gif" alt="ClashView Sync Live Demo - Normal vs Isolated Mode" width="100%" />
+</p>
 
-> **Watch:** [Full HD Feature Overview (32s)](media/ClashViewSync_Widescreen_16x9.mp4) showcasing 1-Click XML ingestion, Navisworks Red/Green color parity, context framing, and zero-clutter isolation.
+> 📺 **Full Presentation Video (32s Full HD @ 60 FPS):** [Watch / Download MP4](media/ClashViewSync_Widescreen_16x9.mp4) showcasing 1-Click XML ingestion, Navisworks Red/Green color parity, context framing, and zero-clutter isolation.
 
 ---
 
@@ -128,7 +130,8 @@ ClashViewSync-pyRevit/
 │   └── tests.yml                 # Automated CI running on Python 3.9 - 3.12
 ├── extension.json                # pyRevit extension manifest
 ├── media/
-│   └── ClashViewSync_Widescreen_16x9.mp4 # 32s Full HD editorial presentation video
+│   ├── clashview_demo.gif        # Animated looping walkthrough for README & mobile
+│   └── ClashViewSync_Widescreen_16x9.mp4 # 32s Full HD presentation video (<8.5 MB)
 ├── Sakr Tools.tab/
 │   └── Tools.panel/
 │       ├── bundle.yaml           # Panel layout configuration
