@@ -9,6 +9,14 @@
 
 ---
 
+## 🎬 Video Overview
+
+https://github.com/Hazemalisakr/ClashViewSync-pyRevit/raw/main/media/ClashViewSync_Widescreen_16x9.mp4
+
+> **Watch:** [Full HD Feature Overview (32s)](media/ClashViewSync_Widescreen_16x9.mp4) showcasing 1-Click XML ingestion, Navisworks Red/Green color parity, context framing, and zero-clutter isolation.
+
+---
+
 ## The Problem
 
 Resolving clashes between Navisworks and Revit is one of the most repetitive bottlenecks in BIM coordination:
@@ -119,6 +127,8 @@ ClashViewSync-pyRevit/
 ├── .github/workflows/
 │   └── tests.yml                 # Automated CI running on Python 3.9 - 3.12
 ├── extension.json                # pyRevit extension manifest
+├── media/
+│   └── ClashViewSync_Widescreen_16x9.mp4 # 32s Full HD editorial presentation video
 ├── Sakr Tools.tab/
 │   └── Tools.panel/
 │       ├── bundle.yaml           # Panel layout configuration
