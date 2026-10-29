@@ -784,10 +784,135 @@ def _apply_linked_element_filter(view, host_doc, category, element_id, r, g, b, 
         return None
 
 
+_HIGHLIGHT_APP_ID = "ClashViewSync"
+
+
+def _remove_highlight_directshapes(host_doc):
+    """Deletes DirectShape highlight proxies created by previous runs."""
+    DB = _get_revit_db()
+    removed = 0
+    try:
+        if DB is None or host_doc is None or not hasattr(DB, "DirectShape"):
+            return 0
+        stale = []
+        for ds in DB.FilteredElementCollector(host_doc).OfClass(DB.DirectShape):
+            if getattr(ds, "ApplicationId", "") == _HIGHLIGHT_APP_ID:
+                stale.append(ds.Id)
+        for sid in stale:
+            try:
+                host_doc.Delete(sid)
+                removed += 1
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return removed
+
+
+def _collect_element_solids(elem):
+    """Returns the visible Solids (Fine detail) of an element, in its own document coordinates."""
+    DB = _get_revit_db()
+    solids = []
+    opts = DB.Options()
+    opts.DetailLevel = DB.ViewDetailLevel.Fine
+    opts.ComputeReferences = False
+    opts.IncludeNonVisibleObjects = False
+    geo = elem.get_Geometry(opts)
+    if geo is None:
+        return solids
+
+    def walk(geometry):
+        for obj in geometry:
+            if isinstance(obj, DB.Solid):
+                if obj.Volume > 1e-9 and obj.Faces.Size > 0:
+                    solids.append(obj)
+            elif isinstance(obj, DB.GeometryInstance):
+                walk(obj.GetInstanceGeometry())
+
+    walk(geo)
+    return solids
+
+
+def _highlight_linked_via_directshape(view, host_doc, res, r, g, b, label, diagnostics=None):
+    """Highlights ONE linked element: copies its solids (transformed by the link transform)
+    into a tagged DirectShape in the host and colors that DirectShape in this view only.
+
+    Revit offers no per-element graphic override for linked elements, so this proxy is the
+    reliable way to color exactly the clashing element. Proxies are removed on every run.
+    """
+    DB = _get_revit_db()
+    try:
+        elem = getattr(res, "linked_element", None) or getattr(res, "element", None)
+        inst = getattr(res, "link_instance", None)
+        if DB is None or elem is None or inst is None or not hasattr(DB, "DirectShape"):
+            return False
+
+        xf = inst.GetTotalTransform()
+        solids = _collect_element_solids(elem)
+        if not solids:
+            if diagnostics is not None:
+                diagnostics.append("Warning: linked {0} has no solid geometry to highlight.".format(label))
+            return False
+
+        import System.Collections.Generic as Generic
+
+        shapes = Generic.List[DB.GeometryObject]()
+        for s in solids:
+            placed = None
+            try:
+                # Tiny uniform grow about the centroid so the proxy does not z-fight the real element
+                c = xf.OfPoint(s.ComputeCentroid())
+                k = 1.004
+                grow = DB.Transform.Identity
+                grow.BasisX = DB.XYZ(k, 0, 0)
+                grow.BasisY = DB.XYZ(0, k, 0)
+                grow.BasisZ = DB.XYZ(0, 0, k)
+                grow.Origin = DB.XYZ(c.X * (1 - k), c.Y * (1 - k), c.Z * (1 - k))
+                placed = DB.SolidUtils.CreateTransformed(s, grow.Multiply(xf))
+            except Exception:
+                placed = None
+            if placed is None:
+                placed = DB.SolidUtils.CreateTransformed(s, xf)
+            shapes.Add(placed)
+
+        ds = DB.DirectShape.CreateElement(host_doc, DB.ElementId(DB.BuiltInCategory.OST_GenericModel))
+        ds.ApplicationId = _HIGHLIGHT_APP_ID
+        ds.ApplicationDataId = "highlight_{0}".format(label)
+        try:
+            ds.Name = "CVS Highlight {0}".format(label)
+        except Exception:
+            pass
+        ds.SetShape(shapes)
+
+        ogs = _create_highlight_graphic_settings(host_doc, r, g, b)
+        if ogs is not None:
+            view.SetElementOverrides(ds.Id, ogs)
+        try:
+            # Isolated mode hides non-participating model categories; keep the proxy's category visible
+            gm_id = DB.ElementId(DB.BuiltInCategory.OST_GenericModel)
+            if view.GetCategoryHidden(gm_id):
+                view.SetCategoryHidden(gm_id, False)
+        except Exception:
+            pass
+        if diagnostics is not None:
+            diagnostics.append(
+                "Highlighted linked {0} via color proxy ({1} solid(s)) in RGB({2},{3},{4})".format(
+                    label, len(solids), r, g, b
+                )
+            )
+        return True
+    except Exception as ex:
+        if diagnostics is not None:
+            diagnostics.append("Warning: color proxy failed for linked {0}: {1}".format(label, ex))
+        return False
+
+
 def _remove_clash_highlight_filters(view, host_doc):
     """Removes every 'CVS_Clash*' view filter from the view (stale category-wide or element
-    filters from previous runs). Returns the number of filters removed."""
+    filters from previous runs) and deletes old highlight DirectShape proxies.
+    Returns the number of filters removed."""
     removed = 0
+    _remove_highlight_directshapes(host_doc)
     try:
         for fid in list(view.GetFilters()):
             try:
@@ -816,8 +941,11 @@ def _highlight_participant(view, host_doc, res, r, g, b, label="Participant", di
         if eid is not None:
             return _highlight_element_color(view, eid, r=r, g=g, b=b, diagnostics=diagnostics)
     else:
-        # Linked element: highlight ONLY this element via an Element-Id view filter
-        elem = getattr(res, "element", None) or getattr(res, "linked_element", None)
+        # Linked element: preferred = DirectShape color proxy (exactly this element)
+        if _highlight_linked_via_directshape(view, host_doc, res, r, g, b, label, diagnostics):
+            return True
+        # Secondary: Element-Id view filter (only this element)
+        elem = getattr(res, "linked_element", None) or getattr(res, "element", None)
         cat = getattr(elem, "Category", None) if elem is not None else None
         if cat is not None and getattr(cat, "Id", None) is not None and eid is not None:
             filter_id = _apply_linked_element_filter(
