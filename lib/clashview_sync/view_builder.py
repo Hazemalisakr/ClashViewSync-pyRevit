@@ -1208,6 +1208,39 @@ def isolate_clash_participant_categories(
         else:
             keep_cat_ids.add(-2001352)
 
+    # Ensure parent/dependent categories remain visible:
+    # 1. Curtain wall mullions, panels, and grids require Walls to be visible in Revit's engine
+    curtain_bics = {
+        int(DB.BuiltInCategory.OST_CurtainWallMullions),
+        int(DB.BuiltInCategory.OST_CurtainWallPanels),
+        int(DB.BuiltInCategory.OST_CurtainGrids),
+    } if DB is not None and hasattr(DB, "BuiltInCategory") else {-2000171, -2000170, -2000173}
+    wall_bic = int(DB.BuiltInCategory.OST_Walls) if DB is not None and hasattr(DB, "BuiltInCategory") else -2000011
+
+    if keep_cat_ids.intersection(curtain_bics) or wall_bic in keep_cat_ids:
+        keep_cat_ids.add(wall_bic)
+        keep_cat_ids.update(curtain_bics)
+
+    # 2. Stairs components require Stairs
+    stairs_bics = {
+        int(DB.BuiltInCategory.OST_StairsRuns),
+        int(DB.BuiltInCategory.OST_StairsLandings),
+        int(DB.BuiltInCategory.OST_StairsSupports),
+    } if DB is not None and hasattr(DB, "BuiltInCategory") else {-2000124, -2000125, -2000126}
+    stair_bic = int(DB.BuiltInCategory.OST_Stairs) if DB is not None and hasattr(DB, "BuiltInCategory") else -2000120
+    if keep_cat_ids.intersection(stairs_bics):
+        keep_cat_ids.add(stair_bic)
+
+    # 3. Railing components require Railings
+    railing_bics = {
+        int(DB.BuiltInCategory.OST_RailingBaluster),
+        int(DB.BuiltInCategory.OST_RailingHandRail),
+        int(DB.BuiltInCategory.OST_RailingTopRail),
+    } if DB is not None and hasattr(DB, "BuiltInCategory") else {-2000086, -2000087, -2000088}
+    rail_bic = int(DB.BuiltInCategory.OST_Railings) if DB is not None and hasattr(DB, "BuiltInCategory") else -2000085
+    if keep_cat_ids.intersection(railing_bics):
+        keep_cat_ids.add(rail_bic)
+
     hidden_count = 0
     # 2. Iterate through host_doc.Settings.Categories and hide all other Model categories
     try:
