@@ -28,10 +28,12 @@ Resolving clashes between Navisworks and Revit is one of the most repetitive bot
 * **Two Dedicated Framing Modes**:
   * **Normal 3D Crop Box**: Tight, padded section box framing the two clashing elements within their physical context.
   * **Isolated 3D Crop Box**: Full clash isolation. Automatically suppresses non-participating model categories, hides unrelated links, and hides interfering geometry inside the box so only the clashing items remain visible.
-* **Navisworks Color Parity**: Applies solid projection fills matching Navisworks Clash Detective conventions:
-  * **Item 1:** Solid Red (`#DC1E1E`)
-  * **Item 2:** Solid Green (`#00C800`)
-  * Includes a toggle to disable overrides when reviewing native materials.
+* **DirectContext3D Transient GPU Highlighting (Zero DB Writes)**: Renders clashing elements with vibrant Navisworks-standard colors directly through the graphics pipeline (`IDirectContext3DServer`):
+  * **Item 1:** Translucent Red (`#DC1E1E`, 35% opacity)
+  * **Item 2:** Translucent Green (`#00C800`, 35% opacity)
+  * **100% Read-Only & Safe for Worksharing**: Creates **zero** `DirectShape` elements, zero proxies, and opens zero database transactions for graphics. Saving or syncing to central writes zero clash geometry.
+  * **Hardware Section Box Clipping**: Viewport shaders automatically clip transient meshes against the active 3D section box.
+  * **Automatic View Cleanup**: Highlighting clears automatically the instant the view is deactivated or closed.
 * **Single View In-Place Switching**: Toggling between Normal and Isolated modes updates the view settings in place rather than creating duplicate views.
 * **WPF Interface**: Clean UI with live clash search, clash test dropdown, view mode selection, and a persistent link to change XML reports on the fly.
 
@@ -67,7 +69,7 @@ Resolving clashes between Navisworks and Revit is one of the most repetitive bot
 ### Method 2: Adding to an Existing `SakrTools.extension`
 
 If you already use `SakrTools.extension`:
-1. Copy `lib/clashview_sync/` into your existing `SakrTools.extension/lib/`.
+1. Copy `lib/clashview_sync/` and `lib/ClashViewSync.DirectContext.dll` into your existing `SakrTools.extension/lib/`.
 2. Copy `Sakr Tools.tab/Tools.panel/ClashView Sync.pushbutton/` into your existing `SakrTools.extension/Sakr Tools.tab/Tools.panel/`.
 3. Add `ClashView Sync` to the `layout:` list in `Sakr Tools.tab/Tools.panel/bundle.yaml`.
 4. Click **pyRevit > Reload**.
@@ -125,6 +127,7 @@ ClashViewSync-pyRevit/
 │           ├── icon.png          # 96x96 Ribbon icon
 │           └── script.py         # WPF UI, user interaction, and Revit execution
 ├── lib/
+│   ├── ClashViewSync.DirectContext.dll # Pre-compiled C# DirectContext3D assembly
 │   └── clashview_sync/
 │       ├── __init__.py           # Package exports
 │       ├── models.py             # Data structures (ClashResultItem, CameraViewpoint, etc.)
@@ -132,6 +135,8 @@ ClashViewSync-pyRevit/
 │       ├── coordinate_transformer.py # 8-corner bounding box math & transformation
 │       ├── element_resolver.py   # Multi-document element resolution & disambiguation
 │       └── view_builder.py       # Revit View3D generation, section box, and graphic overrides
+├── src/
+│   └── ClashHighlighter.cs       # C# source for DirectContext3D external server
 ├── sample_data/
 │   └── sample_clash_report.xml   # Sample XML report for verification
 └── tests/
