@@ -395,16 +395,6 @@ namespace ClashViewSync.DirectContext
                     continue;
                 }
 
-                XYZ centroid = solid.ComputeCentroid();
-                XYZ worldCentroid = xf.OfPoint(centroid);
-                double k = scaleOffset;
-                Transform grow = Transform.Identity;
-                grow.BasisX = new XYZ(k, 0, 0);
-                grow.BasisY = new XYZ(0, k, 0);
-                grow.BasisZ = new XYZ(0, 0, k);
-                grow.Origin = new XYZ(worldCentroid.X * (1 - k), worldCentroid.Y * (1 - k), worldCentroid.Z * (1 - k));
-                Transform finalXf = grow.Multiply(xf);
-
                 foreach (Face face in solid.Faces)
                 {
                     Mesh mesh = face.Triangulate();
@@ -413,11 +403,28 @@ namespace ClashViewSync.DirectContext
                         continue;
                     }
 
+                    XYZ normal = XYZ.BasisZ;
+                    try
+                    {
+                        BoundingBoxUV uvBox = face.GetBoundingBox();
+                        double midU = (uvBox.Min.U + uvBox.Max.U) * 0.5;
+                        double midV = (uvBox.Min.V + uvBox.Max.V) * 0.5;
+                        normal = face.ComputeNormal(new UV(midU, midV));
+                    }
+                    catch
+                    {
+                        normal = XYZ.BasisZ;
+                    }
+
+                    XYZ worldNormal = xf.OfVector(normal).Normalize();
+                    double delta = scaleOffset > 0 ? scaleOffset : 0.003;
+                    XYZ offsetVec = worldNormal.Multiply(delta);
+
                     int numVerts = mesh.Vertices.Count;
                     for (int i = 0; i < numVerts; i++)
                     {
                         XYZ pt = mesh.Vertices[i];
-                        result.Vertices.Add(finalXf.OfPoint(pt));
+                        result.Vertices.Add(xf.OfPoint(pt).Add(offsetVec));
                     }
 
                     int numTris = mesh.NumTriangles;

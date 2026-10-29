@@ -79,6 +79,76 @@ def _clear_directcontext3d_highlight(uidoc=None):
     except Exception:
         pass
 
+def _extract_mesh_with_normal_offset(elem, xf, r, g, b, mesh_cls, delta_ft=0.003):
+    """Extracts element geometry with surface-normal displacement to eliminate Z-fighting and ghosting."""
+    try:
+        import Autodesk.Revit.DB as DB
+
+        cm = mesh_cls()
+        cm.Red = r
+        cm.Green = g
+        cm.Blue = b
+        cm.Transparency = 0  # Solid vibrant color, zero ghosting
+
+        if elem is None:
+            return cm
+
+        opts = DB.Options()
+        opts.DetailLevel = DB.ViewDetailLevel.Fine
+        opts.ComputeReferences = False
+        opts.IncludeNonVisibleObjects = False
+        geo = elem.get_Geometry(opts)
+        if not geo:
+            return cm
+
+        def get_solids(g_elem):
+            solids = []
+            for obj in g_elem:
+                if isinstance(obj, DB.Solid) and obj.Volume > 1e-9 and obj.Faces.Size > 0:
+                    solids.append(obj)
+                elif isinstance(obj, DB.GeometryInstance):
+                    solids.extend(get_solids(obj.GetInstanceGeometry()))
+            return solids
+
+        solids = get_solids(geo)
+        vert_offset = 0
+
+        for solid in solids:
+            for face in solid.Faces:
+                mesh = face.Triangulate()
+                if not mesh:
+                    continue
+
+                try:
+                    uv_box = face.GetBoundingBox()
+                    mid_u = (uv_box.Min.U + uv_box.Max.U) * 0.5
+                    mid_v = (uv_box.Min.V + uv_box.Max.V) * 0.5
+                    norm = face.ComputeNormal(DB.UV(mid_u, mid_v))
+                except Exception:
+                    norm = DB.XYZ(0, 0, 1)
+
+                world_norm = xf.OfVector(norm).Normalize() if xf else norm.Normalize()
+                offset_vec = world_norm * delta_ft
+
+                num_v = mesh.Vertices.Count
+                for i in range(num_v):
+                    pt = mesh.Vertices[i]
+                    world_pt = (xf.OfPoint(pt) if xf else pt) + offset_vec
+                    cm.Vertices.Add(world_pt)
+
+                num_t = mesh.NumTriangles
+                for t in range(num_t):
+                    tri = mesh.get_Triangle(t)
+                    cm.Triangles.Add(vert_offset + int(tri.get_Index(0)))
+                    cm.Triangles.Add(vert_offset + int(tri.get_Index(1)))
+                    cm.Triangles.Add(vert_offset + int(tri.get_Index(2)))
+
+                vert_offset += num_v
+
+        return cm
+    except Exception:
+        return mesh_cls()
+
 def _apply_directcontext3d_highlight(uidoc, view, res_a, res_b):
     """Applies transient GPU highlight using DirectContext3D. Zero DB writes."""
     try:
@@ -89,17 +159,17 @@ def _apply_directcontext3d_highlight(uidoc, view, res_a, res_b):
         import System.Collections.Generic as Generic
         meshes = Generic.List[mesh_cls]()
 
-        # Item 1: Red (RGB 220, 30, 30, 35% transparency)
+        # Item 1: Vibrant Solid Red (RGB 220, 30, 30 with 0.9mm outward normal displacement)
         if res_a is not None and getattr(res_a, "element", None) is not None:
             xf_a = res_a.link_instance.GetTotalTransform() if getattr(res_a, "is_linked", False) and res_a.link_instance else None
-            m_a = hl.ExtractElementMesh(res_a.element, xf_a, 220, 30, 30, 35, 1.004)
+            m_a = _extract_mesh_with_normal_offset(res_a.element, xf_a, 220, 30, 30, mesh_cls, 0.003)
             if m_a.Vertices.Count > 0:
                 meshes.Add(m_a)
 
-        # Item 2: Green (RGB 0, 200, 0, 35% transparency)
+        # Item 2: Vibrant Solid Green (RGB 0, 200, 0 with 0.9mm outward normal displacement)
         if res_b is not None and getattr(res_b, "element", None) is not None:
             xf_b = res_b.link_instance.GetTotalTransform() if getattr(res_b, "is_linked", False) and res_b.link_instance else None
-            m_b = hl.ExtractElementMesh(res_b.element, xf_b, 0, 200, 0, 35, 1.004)
+            m_b = _extract_mesh_with_normal_offset(res_b.element, xf_b, 0, 200, 0, mesh_cls, 0.003)
             if m_b.Vertices.Count > 0:
                 meshes.Add(m_b)
 
